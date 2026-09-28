@@ -1,0 +1,116 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Windows EXE
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Install Playwright Chromium
+        shell: pwsh
+        run: |
+          python -m playwright install chromium
+
+      - name: Check Python files
+        shell: pwsh
+        run: |
+          python -m compileall app
+
+      - name: Build EXE
+        shell: pwsh
+        run: |
+          python -m PyInstaller `
+            --noconfirm `
+            --clean `
+            --windowed `
+            --name "G-Labs-Flow-Automation" `
+            --onedir `
+            --collect-all PySide6 `
+            --collect-all playwright `
+            --hidden-import app `
+            --hidden-import app.main `
+            --hidden-import app.models `
+            --hidden-import app.storage `
+            --hidden-import app.worker `
+            --hidden-import app.login_profile `
+            --hidden-import app.browser `
+            --hidden-import app.browser.flow_runner `
+            app\main.py
+
+      - name: Copy application data
+        shell: pwsh
+        run: |
+          if (Test-Path "data") {
+            Copy-Item "data" "dist\G-Labs-Flow-Automation\data" -Recurse -Force
+          }
+
+      - name: Copy README
+        shell: pwsh
+        run: |
+          if (Test-Path "README.md") {
+            Copy-Item "README.md" "dist\G-Labs-Flow-Automation\README.md" -Force
+          }
+
+      - name: Verify EXE exists
+        shell: pwsh
+        run: |
+          $exe = "dist\G-Labs-Flow-Automation\G-Labs-Flow-Automation.exe"
+
+          if (!(Test-Path $exe)) {
+            Write-Host "ERROR: EXE was not created."
+            Write-Host "Contents of dist:"
+            Get-ChildItem "dist" -Recurse | Select-Object FullName
+            exit 1
+          }
+
+          Write-Host "EXE FOUND:"
+          Get-Item $exe | Format-List FullName,Length
+
+      - name: Create portable ZIP
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "dist\G-Labs-Flow-Automation\*" `
+            -DestinationPath "dist\G-Labs-Flow-Automation-Windows.zip" `
+            -Force
+
+      - name: Upload EXE folder
+        uses: actions/upload-artifact@v4
+        with:
+          name: G-Labs-Flow-Automation-Windows
+          path: dist/G-Labs-Flow-Automation/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload portable ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: G-Labs-Flow-Automation-Portable-ZIP
+          path: dist/G-Labs-Flow-Automation-Windows.zip
+          if-no-files-found: error
+          retention-days: 30
